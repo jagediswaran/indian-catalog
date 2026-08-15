@@ -15,6 +15,16 @@ const KINDS = [
 ];
 
 const catalogs = [];
+
+// Combined catalog: all Indian shows (series + reality), all languages mixed
+catalogs.push({
+  id: "ind-all-shows",
+  type: "series",
+  name: "All Indian Shows",
+  extra: [{ name: "skip", isRequired: false }],
+});
+
+// Per-language, per-type catalogs
 for (const lang of LANGUAGES) {
   for (const kind of KINDS) {
     catalogs.push({
@@ -28,7 +38,7 @@ for (const lang of LANGUAGES) {
 
 const manifest = {
   id: "org.indian.regional.catalog",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "Indian Regional Catalog",
   description:
     "Browse Indian movies, series, and reality shows across Tamil, Hindi, Malayalam, Telugu, Kannada, Marathi, and Bengali. Powered by TMDB.",
