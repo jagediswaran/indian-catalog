@@ -7,6 +7,9 @@ const IMG_BASE = "https://image.tmdb.org/t/p/w500";
 const REALITY_GENRE_ID = 10764;
 const PAGE_SIZE = 20;
 
+// All Indian languages used by the combined "All Indian Shows" catalog
+const ALL_LANGS = ["ta", "hi", "ml", "te", "kn", "mr", "bn"];
+
 if (!TMDB_API_KEY) {
   console.warn("[WARN] TMDB_API_KEY is not set. Requests will fail.");
 }
@@ -60,6 +63,20 @@ function buildDiscoverUrl(lang, kind, page) {
   return `${TMDB_BASE}/${endpoint}?${params.toString()}`;
 }
 
+// Build a discover URL for the combined catalog: all Indian TV, any language
+function buildAllShowsUrl(page) {
+  const params = new URLSearchParams({
+    api_key: TMDB_API_KEY,
+    with_origin_country: "IN",
+    with_original_language: ALL_LANGS.join("|"), // "|" means OR in TMDB
+    sort_by: "popularity.desc",
+    include_adult: "false",
+    page: String(page),
+    language: "en-US",
+  });
+  return `${TMDB_BASE}/discover/tv?${params.toString()}`;
+}
+
 function toMetaItem(item, stremioType, genreMap) {
   const isMovie = stremioType === "movie";
   const title = isMovie ? item.title : item.name;
@@ -82,10 +99,28 @@ function toMetaItem(item, stremioType, genreMap) {
 }
 
 async function getCatalog(type, id, extra = {}) {
+  const page = skipToPage(extra.skip);
+
+  // Combined "All Indian Shows" catalog
+  if (id === "ind-all-shows") {
+    const genreMap = await loadGenres("tv");
+    try {
+      const res = await fetch(buildAllShowsUrl(page));
+      const data = await res.json();
+      const metas = (data.results || []).map((item) =>
+        toMetaItem(item, "series", genreMap)
+      );
+      return { metas };
+    } catch (e) {
+      console.error("All-shows fetch error:", e.message);
+      return { metas: [] };
+    }
+  }
+
+  // Per-language catalogs
   const { lang, kind } = parseCatalogId(id);
   if (!lang || !kind) return { metas: [] };
 
-  const page = skipToPage(extra.skip);
   const mediaType = kind === "movie" ? "movie" : "tv";
   const stremioType = kind === "movie" ? "movie" : "series";
 
