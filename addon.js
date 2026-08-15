@@ -4,11 +4,27 @@ require("dotenv").config();
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const IMG_BASE = "https://image.tmdb.org/t/p/w500";
-const REALITY_GENRE_ID = 10764;
 const PAGE_SIZE = 20;
 
-// All Indian languages used by the combined "All Indian Shows" catalog
-const ALL_LANGS = ["ta", "hi", "ml", "te", "kn", "mr", "bn"];
+// Which languages each catalog pulls. "|" = OR in TMDB queries.
+const CATALOG_LANGS = {
+  "mov-ta": ["ta"],
+  "mov-hi": ["hi"],
+  "mov-ml": ["ml"],
+  "mov-other": ["te", "kn", "mr", "bn"],
+  "shows-ta": ["ta"],
+  "shows-other": ["hi", "ml", "te", "kn", "mr", "bn"],
+};
+
+// Which TMDB media type each catalog uses
+const CATALOG_MEDIA = {
+  "mov-ta": "movie",
+  "mov-hi": "movie",
+  "mov-ml": "movie",
+  "mov-other": "movie",
+  "shows-ta": "tv",
+  "shows-other": "tv",
+};
 
 if (!TMDB_API_KEY) {
   console.warn("[WARN] TMDB_API_KEY is not set. Requests will fail.");
@@ -32,49 +48,23 @@ async function loadGenres(mediaType) {
   }
 }
 
-function parseCatalogId(id) {
-  const parts = id.split("-");
-  return { lang: parts[1], kind: parts[2] };
-}
-
 function skipToPage(skip) {
   const s = parseInt(skip, 10) || 0;
   return Math.floor(s / PAGE_SIZE) + 1;
 }
 
-function buildDiscoverUrl(lang, kind, page) {
-  const isMovie = kind === "movie";
-  const endpoint = isMovie ? "discover/movie" : "discover/tv";
-
+function buildUrl(mediaType, langs, page) {
+  const endpoint = mediaType === "movie" ? "discover/movie" : "discover/tv";
   const params = new URLSearchParams({
     api_key: TMDB_API_KEY,
-    with_original_language: lang,
     with_origin_country: "IN",
+    with_original_language: langs.join("|"),
     sort_by: "popularity.desc",
     include_adult: "false",
     page: String(page),
     language: "en-US",
   });
-
-  if (kind === "reality") {
-    params.set("with_genres", String(REALITY_GENRE_ID));
-  }
-
   return `${TMDB_BASE}/${endpoint}?${params.toString()}`;
-}
-
-// Build a discover URL for the combined catalog: all Indian TV, any language
-function buildAllShowsUrl(page) {
-  const params = new URLSearchParams({
-    api_key: TMDB_API_KEY,
-    with_origin_country: "IN",
-    with_original_language: ALL_LANGS.join("|"), // "|" means OR in TMDB
-    sort_by: "popularity.desc",
-    include_adult: "false",
-    page: String(page),
-    language: "en-US",
-  });
-  return `${TMDB_BASE}/discover/tv?${params.toString()}`;
 }
 
 function toMetaItem(item, stremioType, genreMap) {
@@ -99,36 +89,16 @@ function toMetaItem(item, stremioType, genreMap) {
 }
 
 async function getCatalog(type, id, extra = {}) {
+  const langs = CATALOG_LANGS[id];
+  const mediaType = CATALOG_MEDIA[id];
+  if (!langs || !mediaType) return { metas: [] };
+
+  const stremioType = mediaType === "movie" ? "movie" : "series";
   const page = skipToPage(extra.skip);
-
-  // Combined "All Indian Shows" catalog
-  if (id === "ind-all-shows") {
-    const genreMap = await loadGenres("tv");
-    try {
-      const res = await fetch(buildAllShowsUrl(page));
-      const data = await res.json();
-      const metas = (data.results || []).map((item) =>
-        toMetaItem(item, "series", genreMap)
-      );
-      return { metas };
-    } catch (e) {
-      console.error("All-shows fetch error:", e.message);
-      return { metas: [] };
-    }
-  }
-
-  // Per-language catalogs
-  const { lang, kind } = parseCatalogId(id);
-  if (!lang || !kind) return { metas: [] };
-
-  const mediaType = kind === "movie" ? "movie" : "tv";
-  const stremioType = kind === "movie" ? "movie" : "series";
-
   const genreMap = await loadGenres(mediaType);
-  const url = buildDiscoverUrl(lang, kind, page);
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(buildUrl(mediaType, langs, page));
     const data = await res.json();
     const metas = (data.results || []).map((item) =>
       toMetaItem(item, stremioType, genreMap)
